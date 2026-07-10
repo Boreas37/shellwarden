@@ -1,0 +1,46 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://shellwarden:shellwarden@postgres:5432/shellwarden?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me-please-change-me-32bytes-min}
+      GUACD_HOST: guacd
+      GUACD_PORT: "4822"
+      RECORDING_PATH: /app/recordings
+      BULK_TIMEOUT_SEC: "30"
+      GATEWAY_PORT: "8080"
+    volumes:
+      - recordings:/app/recordings
+    depends_on:
+      postgres:
+        condition: service_healthy
+      guacd:
+        condition: service_started
+
+  guacd:
+    image: guacamole/guacd:latest
+    expose:
+      - "4822"
+    # port 4822 is internal only — reachable by the gateway over the compose network
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shellwarden
+      POSTGRES_PASSWORD: shellwarden
+      POSTGRES_DB: shellwarden
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shellwarden"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+  recordings:

@@ -1,0 +1,36 @@
+# A realistic managed target: a Debian host running a real OpenSSH server AND
+# the ShellWarden agent. Connect to it from the UI (agent mode) for a real
+# shell; every command run on it — via the gateway OR a direct SSH login — is
+# captured by the agent's host command logger.
+
+# --- build the agent from source (arch-correct) ---
+FROM golang:1.22-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -o /out/shellwarden-agent ./cmd/agent
+
+# --- runtime ---
+FROM debian:12-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssh-server ca-certificates procps iproute2 curl jq debsecan \
+ && rm -rf /var/lib/apt/lists/*
+
+# Demo login account: warden / warden  (also enable root password login).
+RUN useradd -m -s /bin/bash warden \
+ && echo 'warden:warden' | chpasswd \
+ && echo 'root:warden' | chpasswd \
+ && mkdir -p /run/sshd \
+ && sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config \
+ && sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config \
+ && ssh-keygen -A
+# Host keys are baked into the image so recreated containers keep a stable
+# identity (the gateway's TOFU pin stays valid across restarts).
+
+COPY --from=build /out/shellwarden-agent /usr/local/bin/shellwarden-agent
+COPY demo/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/shellwarden-agent /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

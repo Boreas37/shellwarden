@@ -1,0 +1,51 @@
+# Self-contained test stack for the VM. One command brings up gateway +
+# postgres + a self-enrolling Debian target (sshd + agent), then run
+# ./scripts/e2e_test.sh against it.
+#
+#   docker compose -f docker-compose.test.yml up --build -d
+#   make test-e2e        # or run scripts/e2e_test.sh directly
+#
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shellwarden
+      POSTGRES_PASSWORD: shellwarden
+      POSTGRES_DB: shellwarden
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shellwarden"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    environment:
+      DATABASE_URL: postgres://shellwarden:shellwarden@postgres:5432/shellwarden?sslmode=disable
+      JWT_SECRET: e2e-test-secret-e2e-test-secret-e2e-test-secret-0123456789
+      SECRET_KEY: e2e-test-encryption-key-change-me-please-0123456789abcd
+      RECORDING_PATH: /app/recordings
+      # Flip to "true" to test JIT enforcement end-to-end.
+      JIT_REQUIRED: "false"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  target:
+    build:
+      context: .
+      dockerfile: demo/Dockerfile.target
+    environment:
+      BOOTSTRAP: "1"
+      GATEWAY_HTTP: http://gateway:8080
+      GATEWAY_URL: ws://gateway:8080
+      ADMIN_USER: admin
+      ADMIN_PASS: changeme
+      TARGET_NAME: debian-target
+      HOST_MONITOR: auto
+    depends_on:
+      - gateway

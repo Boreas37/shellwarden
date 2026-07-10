@@ -1,0 +1,12 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/gateway ./cmd/gateway"
+  bin = "./tmp/gateway"
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "bin", "web", "static", "recordings"]
+  delay = 500
+
+[log]
+  time = true
